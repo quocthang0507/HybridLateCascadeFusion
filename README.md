@@ -1,5 +1,8 @@
 # HybridLateCascadeFusion
-Repository for the paper "A Multimodal Hybrid Late-Cascade Fusion Network for Enhanced 3D Object Detection", published in the ECCV workshop "Multimodal Perception and Comprehension of Corner Cases in Autonomous Driving"
+
+![image](https://github.com/user-attachments/assets/9014722d-f77d-4ef7-8eb4-18e88dfe35c6)
+
+This repository is the code release for the paper "A Multimodal Hybrid Late-Cascade Fusion Network for Enhanced 3D Object Detection", published in the ECCV workshop "Multimodal Perception and Comprehension of Corner Cases in Autonomous Driving"
 [Paper](https://arxiv.org/abs/2504.18419)
 
 ## TODOs
