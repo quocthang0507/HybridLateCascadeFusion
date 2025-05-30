@@ -2,13 +2,13 @@
 Repository for the paper "A Multimodal Hybrid Late-Cascade Fusion Network for Enhanced 3D Object Detection", published in the ECCV workshop "Multimodal Perception and Comprehension of Corner Cases in Autonomous Driving"
 [Paper](https://arxiv.org/abs/2504.18419)
 
-# TODOs
+## TODOs
 
 - [x] Upload code
 - [ ] Documentation
 - [ ] Upload weights for reproducibility
 
-# Citation
+## Citation
 
 If you find this project useful, please consider citing our work.
 
@@ -26,7 +26,7 @@ If you find this project useful, please consider citing our work.
 }
 ```
 
-# Acknowledgements
+## Acknowledgements
 
 This repository is built upon [mmdetection3d](https://github.com/open-mmlab/mmdetection3d) and [mmdetection](https://github.com/open-mmlab/mmdetection).
 Our implementation of the Frustum Localizer is highly inspired by [Frustum PointNets](https://github.com/charlesq34/frustum-pointnets)
