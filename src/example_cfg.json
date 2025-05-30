@@ -1,0 +1,42 @@
+{
+    "score_thr_2d": 0.5,
+    "score_thr_3d": 0.3,
+    "bbox_matching_iou_thr": 0.4,
+    "bbox_matching_mode": "iou",
+    "detection_recovery_iou_thr": 0.3,
+    "min_pts_frustum": 10,
+
+    "align_frustum": true,
+    "use_gaussian_likelihoods": true,
+    "iou_recovery_thr": 0.3,
+    "enlarge_factor": 0.05,
+
+    "use_detection_recovery": true,
+    "use_label_fusion": true,
+    "use_score_fusion": true,
+    "use_final_nms": false,
+    "keep_oov_bboxes": false,
+    "class_prior": [0.33, 0.33, 0.33],
+
+    "num_classes": 3,
+    "classes": ["Pedestrian", "Cyclis", "Car"],
+
+    "valid_2d_classes": [0, 1, 2],
+    "img_label_mapping": [2, 0, 1],
+
+    "final_nms_cfg": {
+        "thresh": 0.3,
+        "pre_max_size": 100,
+        "post_max_size": 100
+    },
+
+    "visualization_cfg": {
+        "colors": [
+            [178, 255, 102],
+            [255, 102, 178],
+            [153, 255, 255]
+        ],
+        "fill_bboxes_2d": true,
+        "alpha": 50
+    }
+}
