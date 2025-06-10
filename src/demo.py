@@ -1,13 +1,10 @@
-import sys
-sys.path.append("/home/it4i-carlos00/3d_object_detection/src/late_fusion_clean_single_view_updated")
-
 import argparse
 import numpy as np
 from pathlib import Path
 import pickle
 import time
 import torch
-from utils import *
+from utils import read_kitti_calibration_data, calibration_to_torch
 
 from inference import LateFusionStereoViewInferencer
 
@@ -25,18 +22,6 @@ if __name__ == '__main__':
                         help="File path for the inference point cloud")
     parser.add_argument("-calib_path", default=None, type=str, required=True,
                         help="File path for the calibration data (kitti format)")
-    parser.add_argument("-detector2d_config", default=None, type=str, required=True,
-                        help="File path for the faster rcnn model config file")
-    parser.add_argument("-detector2d_checkpoint_path", default=None, type=str, required=True,
-                        help="File path for the faster rcnn model checkpoint")
-    parser.add_argument("-detector3d_checkpoint_path", default=None, type=str, required=True,
-                        help="LiDAR detector checkpoint path")
-    parser.add_argument("-detector3d_config", default=None, type=str, required=True,
-                        help="LiDAR detector config path")
-    parser.add_argument("-frustum_detector3d_checkpoint_path", default=None, type=str, required=True,
-                        help="Frustum detector checkpoint path")
-    parser.add_argument("-frustum_detector3d_config", default=None, type=str, required=True,
-                        help="Frustum detector config path")
     parser.add_argument("-late_fusion_config", default=None, type=str, required=True,
                         help="Late Fusion config path")
     parser.add_argument("-device", default='cpu', type=str, required=False,
@@ -46,12 +31,6 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     inferencer = LateFusionStereoViewInferencer(
-        detector2d_config_file=args.detector2d_config,
-        detector2d_checkpoint=args.detector2d_checkpoint_path,
-        detector3d_config_file=args.detector3d_config,
-        detector3d_checkpoint=args.detector3d_checkpoint_path,
-        frustum_detector_checkpoint=args.frustum_detector3d_checkpoint_path,
-        frustum_detector_config_file=args.frustum_detector3d_config,
         late_fusion_cfg=args.late_fusion_config,
         device=args.device
     )

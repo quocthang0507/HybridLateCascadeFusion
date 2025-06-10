@@ -12,8 +12,9 @@ import time
 import json 
 import logging
 import pickle
+from tqdm import tqdm
 
-from utils import *
+from utils import read_kitti_calibration_data, calibration_to_torch
 from inference import LateFusionStereoViewInferencer
 
 from mmengine.logging import print_log
@@ -36,20 +37,8 @@ if __name__ == '__main__':
                         help="The directory where the models will be placed")
     parser.add_argument("-kitti_root_path", default=None, type=str, required=True,
                         help="Directory where the dataset is placed")
-    parser.add_argument("-faster_config_path", default=None, type=str, required=True,
-                        help="Path where the faster rcnn config file is placed")
-    parser.add_argument("-faster_checkpoint_path", default=None, type=str, required=True,
-                        help="Path where the faster rcnn checkpoint .pth file placed")
-    parser.add_argument("-detector3d_checkpoint_path", default=None, type=str, required=True,
-                        help="LiDAR detector checkpoint path")
-    parser.add_argument("-detector3d_config", default='pointpillars_kitti-3class', type=str, required=True,
-                        help="LiDAR detector config (file path or string)")
     parser.add_argument("--use_frustum_detector", default=False, action='store_true',
                         help="Whether to use the specialized detector on the frustum crops")
-    parser.add_argument("-frustum_detector3d_checkpoint_path", default=None, type=str, required=False,
-                        help="Frustum LiDAR detector checkpoint path")
-    parser.add_argument("-frustum_detector3d_config", default='pointpillars_kitti-3class', type=str, required=False,
-                        help="Frustum LiDAR detector config (file path or string)")
     parser.add_argument("--test", default=False, action='store_true',
                         help="Whether to evaluate or not the method")
     parser.add_argument("-validation_split_path", 
@@ -85,12 +74,6 @@ if __name__ == '__main__':
     logging.basicConfig(filename=str(output_dir / 'log.txt'), filemode="w", format=LOGGING_FORMATTER, level=logging.INFO, force=True)
     
     inferencer = LateFusionStereoViewInferencer(
-        detector2d_config_file=args.faster_config_path,
-        detector2d_checkpoint=args.faster_checkpoint_path,
-        detector3d_config_file=args.detector3d_config,
-        detector3d_checkpoint=args.detector3d_checkpoint_path,
-        frustum_detector_checkpoint=args.frustum_detector3d_checkpoint_path,
-        frustum_detector_config_file=args.frustum_detector3d_config,
         late_fusion_cfg=args.late_fusion_config,
         device=args.device
     )
@@ -102,7 +85,7 @@ if __name__ == '__main__':
     results_list = []
     initial_time = time.time()
 
-    for i, val_id in enumerate(validation_ids):
+    for i, val_id in enumerate(tqdm(validation_ids)):
         if i % 100 == 0:
             logging.info(f'Progress: {100 * i / len(validation_ids):.2f}%, elapsed {int(time.time() - initial_time)}s')
         left_image = str(left_path / f'{val_id}.png')

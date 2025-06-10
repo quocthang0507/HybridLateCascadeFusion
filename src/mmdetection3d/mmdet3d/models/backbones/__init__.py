@@ -12,7 +12,6 @@ from .pointnet2_sa_msg import PointNet2SAMSG
 from .pointnet2_sa_ssg import PointNet2SASSG
 from .second import SECOND
 from .spvcnn_backone import MinkUNetBackboneV2, SPVCNNBackbone
-from .frustum_convnet_fcn import FrustumConvNetFCN
 from .frustum_pointnet_backbone import FrustumPointNetBackbone
 
 __all__ = [
@@ -20,5 +19,5 @@ __all__ = [
     'SECOND', 'DGCNNBackbone', 'PointNet2SASSG', 'PointNet2SAMSG',
     'MultiBackbone', 'DLANet', 'MinkResNet', 'Asymm3DSpconv',
     'MinkUNetBackbone', 'SPVCNNBackbone', 'MinkUNetBackboneV2',
-    'FrustumConvNetFCN', 'FrustumPointNetBackbone'
+    'FrustumPointNetBackbone'
 ]

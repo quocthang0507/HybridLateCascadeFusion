@@ -12,9 +12,8 @@ def show_bboxes_3d(pc_path, lidar_to_cam, bboxes_3d: LiDARInstance3DBoxes, label
                    window_name='Open3D', save_path=None, save_capture=False, show_window=True, 
                    adjust_position=True, fill_points_inside=True):
     scan = np.fromfile(pc_path, dtype=np.float32).reshape((-1,4))
-    points = scan[:, 0:3] # lidar xyz (front, left, up)
+    points = scan[:, 0:3]
     velo = np.insert(points, 3, 1, axis=1).T
-    # velo = np.delete(velo, np.where(velo[0,:] < 0), axis=1)
 
     pcd = open3d.open3d.geometry.PointCloud()
     pcd.points = open3d.open3d.utility.Vector3dVector(points[:, :3])

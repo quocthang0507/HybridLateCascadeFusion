@@ -18,7 +18,6 @@ def extract_rotation_translation(P: np.ndarray):
 
 
 def get_camera_center(P: np.ndarray):
-    # TODO: do it with pytorch if possible
     camera_center = null_space(P).flatten()
     camera_center /= camera_center[-1]
     return camera_center
@@ -117,18 +116,3 @@ def calibration_to_torch(calibration_data, device='cuda:0'):
     if 'PI' in calibration_data:
         calibration_data['PI'] = torch.tensor(calibration_data['PI'], dtype=torch.float32, device=device)
     return calibration_data 
-
-
-def read_avod_plane(path):
-    with open(path) as labels_file:
-        planes_data = labels_file.readlines()
-
-    info = planes_data[0]
-    width = int(planes_data[1].rstrip('\n').split()[-1])
-    height = int(planes_data[2].rstrip('\n').split()[-1])
-    
-    if not (info.startswith('# Matrix') and width == 4 and height == 1):
-        raise ValueError('The provided file path does not contain a plane from AVOD')
-    
-    plane = [float(x) for x in planes_data[3].rstrip('\n').split()]
-    return plane

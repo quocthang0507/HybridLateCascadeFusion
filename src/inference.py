@@ -29,10 +29,6 @@ class LateFusionStereoViewInferencer:
     Late Fusion inference class for single view setup.
 
     Args:
-        detector3d_config_file (Union[Path, str]): Path to the 3D detector configuration file.
-        detector3d_checkpoint (Union[Path, str]): Path to the 3D detector checkpoint.
-        detector2d_config_file (Union[Path, str]): Path to the 2D detector configuration file.
-        detector2d_checkpoint (Union[Path, str]): Path to the 2D detector checkpoint.
         late_fusion_cfg (Union[Dict, str, Path]): Configuration dict for late fusion.
             If a file path is passed, it will load the configuration from it
         lidar_to_cam (Union[np.ndarray, Tensor, Sequence[Sequence[float]]], optional): 
@@ -44,13 +40,7 @@ class LateFusionStereoViewInferencer:
         device (Union[str, torch.device], optional): Device to run the models on. Defaults to 'cuda:0'.
     """
     
-    def __init__(self, 
-                 detector3d_config_file: Union[Path, str],
-                 detector3d_checkpoint: Union[Path, str],
-                 frustum_detector_config_file: Union[Path, str],
-                 frustum_detector_checkpoint: Union[Path, str],
-                 detector2d_config_file: Union[Path, str],
-                 detector2d_checkpoint: Union[Path, str],
+    def __init__(self,
                  late_fusion_cfg: Union[Dict, str, Path],
                  lidar_to_cam: Union[np.ndarray, Tensor, Sequence[Sequence[float]]] = None,
                  cam_to_img_left: Union[np.ndarray, Tensor, Sequence[Sequence[float]]] = None,
@@ -64,10 +54,23 @@ class LateFusionStereoViewInferencer:
         else:
             with open(late_fusion_cfg, 'r') as cfg_file:
                 self.late_fusion_cfg = json.load(cfg_file)
-                
-        self._init_detector2d(detector2d_config_file, detector2d_checkpoint)
-        self._init_detector3d(detector3d_config_file, detector3d_checkpoint)
-        self._init_frustum_detector(frustum_detector_config_file, frustum_detector_checkpoint)
+
+        detector2d = self.late_fusion_cfg.get('detector2d', None)
+        detector3d = self.late_fusion_cfg.get('detector3d', None)
+        frustum_detector = self.late_fusion_cfg.get('frustum_detector', None)
+
+        assert detector2d is not None, 'detector2d is not defined in the late fusion config'
+        assert detector3d is not None, 'detector3d is not defined in the late fusion config'
+
+        if frustum_detector is None:
+            warnings.warn('frustum_detector is not defined in the late fusion config, detection recovery will not be performed')
+
+        self._init_detector2d(detector2d['cfg_path'], detector2d['checkpoint_path'])
+        self._init_detector3d(detector3d['cfg_path'], detector3d['checkpoint_path'])
+        if frustum_detector is not None:
+            self._init_frustum_detector(frustum_detector['cfg_path'], frustum_detector['checkpoint_path'])
+        else:
+            self.frustum_detector = None
                 
         self.lidar_to_cam = lidar_to_cam
         if lidar_to_cam is None:
@@ -101,8 +104,10 @@ class LateFusionStereoViewInferencer:
         self.img_label_mapping = self.late_fusion_cfg.get('img_label_mapping', list(range(self.num_classes)))
         self.img_label_mapping = torch.tensor(self.img_label_mapping, dtype=torch.int32, device=self.device)
         
-        self.score_thr_2d = self.late_fusion_cfg.get('score_thr_2d', 0.5)
-        self.score_thr_3d = self.late_fusion_cfg.get('score_thr_3d', 0.3)
+        self.score_thr_2d = self.late_fusion_cfg.get('score_thr_2d', [0.5] * self.num_classes)
+        self.score_thr_2d = torch.tensor(self.score_thr_2d, dtype=torch.float32, device=self.device)
+        self.score_thr_3d = self.late_fusion_cfg.get('score_thr_3d', [0.3] * self.num_classes)
+        self.score_thr_3d = torch.tensor(self.score_thr_3d, dtype=torch.float32, device=self.device)
         self.bb_match_iou_thr = self.late_fusion_cfg.get('bbox_matching_iou_thr', 0.5)
         self.recovery_iou_thr = self.late_fusion_cfg.get('detection_recovery_iou_thr', 0.4)
         self.bb_match_mode = self.late_fusion_cfg.get('bbox_matching_mode', 'iou')
@@ -128,7 +133,6 @@ class LateFusionStereoViewInferencer:
         
         self.align_frustum = self.late_fusion_cfg.get('align_frustum', False)
         self.use_gaussian_likelihoods = self.late_fusion_cfg.get('use_gaussian_likelihoods', True)
-        self.iou_recovery_thr = self.late_fusion_cfg.get('iou_recovery_thr', 0.3)
         self.enlarge_factor = self.late_fusion_cfg.get('enlarge_factor', 0.05)
         
     def _init_detector3d(self, cfg_file, checkpoint):
@@ -193,18 +197,22 @@ class LateFusionStereoViewInferencer:
             matching['labels_3d'] = new_labels_3d
             matching['scores_3d'] = new_scores_3d
             
-        if self.use_detection_recovery:
+        if self.use_detection_recovery and self.frustum_detector is not None:
             recovery_output = self.detection_recovery(
                 point_cloud, bbox_matching_dict['unmatched_rgb_left'], bbox_matching_dict['unmatched_rgb_right'], 
                 lidar_to_cam=lidar_to_cam, cam_to_img_left=cam_to_img_left, cam_to_img_right=cam_to_img_right,
                 img_shape_left=data_samples_2d_left[0].img_shape, img_shape_right=data_samples_2d_right[0].img_shape,
             )
             matching = self.merge_matchings(matching, recovery_output)
+
+        bboxes_3d = matching['bboxes_3d']
+        scores_3d = matching['scores_3d']
+        labels_3d = matching['labels_3d']
             
         if self.keep_oov_bboxes:
-            bboxes_3d = torch.cat([matching['bboxes_3d'], oov_detections['bboxes_3d']], dim=0)
-            scores_3d = torch.cat([matching['scores_3d'], oov_detections['scores_3d']], dim=0)
-            labels_3d = torch.cat([matching['labels_3d'], oov_detections['labels_3d']], dim=0)
+            bboxes_3d = torch.cat([bboxes_3d, oov_detections['bboxes_3d']], dim=0)
+            scores_3d = torch.cat([scores_3d, oov_detections['scores_3d']], dim=0)
+            labels_3d = torch.cat([labels_3d, oov_detections['labels_3d']], dim=0)
         
         # return back to mmdet3d bounding boxes format
         bboxes_3d[:, 2] -= bboxes_3d[:, 5] / 2
@@ -287,7 +295,7 @@ class LateFusionStereoViewInferencer:
             matching['labels_3d'] = new_labels_3d
             matching['scores_3d'] = new_scores_3d
             
-        if self.use_detection_recovery:
+        if self.use_detection_recovery and self.frustum_detector is not None:
             recovery_output = self.detection_recovery(
                 point_cloud, bbox_matching_dict['unmatched_rgb_left'], bbox_matching_dict['unmatched_rgb_right'], 
                 lidar_to_cam=lidar_to_cam, cam_to_img_left=cam_to_img_left, cam_to_img_right=cam_to_img_right,
@@ -332,11 +340,16 @@ class LateFusionStereoViewInferencer:
         
         labels = results.pred_instances.labels
         scores = results.pred_instances.scores
-        valid_boxes = torch.isin(labels, self.valid_2d_classes) & (scores >= self.score_thr_2d)
+        valid_boxes = torch.isin(labels, self.valid_2d_classes)
         scores = scores[valid_boxes]
         bboxes = results.pred_instances.bboxes[valid_boxes]
         labels = labels[valid_boxes]
         labels = self.img_label_mapping[labels].long()
+
+        filter_scores = scores >= self.score_thr_2d[labels]
+        bboxes = bboxes[filter_scores]
+        labels = labels[filter_scores]
+        scores = scores[filter_scores]
         
         return bboxes, labels, scores, inputs['data_samples']
     
@@ -360,7 +373,7 @@ class LateFusionStereoViewInferencer:
         labels = detection_output.pred_instances_3d.labels_3d.long()
         scores = detection_output.pred_instances_3d.scores_3d
         
-        filter_scores = scores >= self.score_thr_3d
+        filter_scores = scores >= self.score_thr_3d[labels]
         return bboxes[filter_scores], corners[filter_scores], labels[filter_scores], scores[filter_scores], collate_data
     
     def bbox_matching(self, bboxes_3d, scores_3d, labels_3d, corners_3d, bboxes_2d_left, 
@@ -397,10 +410,10 @@ class LateFusionStereoViewInferencer:
             'scores_3d': scores_3d_valid[matches_mask], 
             'labels_3d': labels_3d_valid[matches_mask],
             'bboxes_2d_left': bboxes_2d_left[left_indices] if bboxes_2d_left.shape[0] > 0 else bboxes_2d_left.new_tensor([[-1] * 7] * num_matches),
-            'scores_2d_left': scores_2d_left[left_indices] if bboxes_2d_left.shape[0] > 0 else scores_2d_left.new_tensor([-1.0] * num_matches),
+            'scores_2d_left': scores_2d_left[left_indices] if bboxes_2d_left.shape[0] > 0 else scores_2d_left.new_tensor([0.0] * num_matches),
             'labels_2d_left': labels_2d_left[left_indices] if bboxes_2d_left.shape[0] > 0 else labels_2d_left.new_tensor([-1] * num_matches),
             'bboxes_2d_right': bboxes_2d_right[right_indices] if bboxes_2d_right.shape[0] > 0 else bboxes_2d_right.new_tensor([[-1] * 7] * num_matches),
-            'scores_2d_right': scores_2d_right[right_indices] if bboxes_2d_right.shape[0] > 0 else scores_2d_right.new_tensor([-1.0] * num_matches),
+            'scores_2d_right': scores_2d_right[right_indices] if bboxes_2d_right.shape[0] > 0 else scores_2d_right.new_tensor([0.0] * num_matches),
             'labels_2d_right': labels_2d_right[right_indices] if bboxes_2d_right.shape[0] > 0 else labels_2d_right.new_tensor([-1] * num_matches),
             'both_matches_mask': both_matches,
             'left_matches_mask': left_matches,
