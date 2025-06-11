@@ -144,7 +144,7 @@ You can refer to the original Frustum Localizer [config](./src/model_configs/fru
 
 3. Train the model
 ```
-python $HOME/3d_object_detection/src/mmdetection3d/tools/train.py \
+python $HOME/HybridLateCascadeFusion/src/mmdetection3d/tools/train.py \
 	/path/to/config.py \
 	--work-dir="/where/to/save/the/checkpoints
 ```
