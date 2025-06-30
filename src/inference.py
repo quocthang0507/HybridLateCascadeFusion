@@ -23,6 +23,7 @@ from mmdet3d.apis.inference import init_model, inference_detector
 from mmengine.dataset import Compose as ComposeMMEngine, pseudo_collate
 from mmdet3d.structures import xywhr2xyxyr
 from mmdet3d.models.layers import box3d_multiclass_nms, nms_bev
+from ultralytics import YOLO
 
 class LateFusionStereoViewInferencer:
     """
@@ -55,22 +56,20 @@ class LateFusionStereoViewInferencer:
             with open(late_fusion_cfg, 'r') as cfg_file:
                 self.late_fusion_cfg = json.load(cfg_file)
 
-        detector2d = self.late_fusion_cfg.get('detector2d', None)
-        detector3d = self.late_fusion_cfg.get('detector3d', None)
-        frustum_detector = self.late_fusion_cfg.get('frustum_detector', None)
+        self.detector2d = self.late_fusion_cfg.get('detector2d', None)
+        self.detector3d = self.late_fusion_cfg.get('detector3d', None)
+        self.frustum_detector = self.late_fusion_cfg.get('frustum_detector', None)
 
-        assert detector2d is not None, 'detector2d is not defined in the late fusion config'
-        assert detector3d is not None, 'detector3d is not defined in the late fusion config'
+        assert self.detector2d is not None, 'detector2d is not defined in the late fusion config'
+        assert self.detector3d is not None, 'detector3d is not defined in the late fusion config'
 
-        if frustum_detector is None:
+        if self.frustum_detector is None:
             warnings.warn('frustum_detector is not defined in the late fusion config, detection recovery will not be performed')
 
-        self._init_detector2d(detector2d['cfg_path'], detector2d['checkpoint_path'])
-        self._init_detector3d(detector3d['cfg_path'], detector3d['checkpoint_path'])
-        if frustum_detector is not None:
-            self._init_frustum_detector(frustum_detector['cfg_path'], frustum_detector['checkpoint_path'])
-        else:
-            self.frustum_detector = None
+        self._init_detector2d()
+        self._init_detector3d()
+        if self.frustum_detector is not None:
+            self._init_frustum_detector()
                 
         self.lidar_to_cam = lidar_to_cam
         if lidar_to_cam is None:
@@ -135,7 +134,10 @@ class LateFusionStereoViewInferencer:
         self.use_gaussian_likelihoods = self.late_fusion_cfg.get('use_gaussian_likelihoods', True)
         self.enlarge_factor = self.late_fusion_cfg.get('enlarge_factor', 0.05)
         
-    def _init_detector3d(self, cfg_file, checkpoint):
+    def _init_detector3d(self):
+        cfg_file = self.detector3d.get('cfg_path', None)
+        checkpoint = self.detector3d.get('checkpoint_path', None)
+
         self.detector3d = init_model(cfg_file, checkpoint, device=self.device)
 
         cfg = self.detector3d.cfg
@@ -144,14 +146,26 @@ class LateFusionStereoViewInferencer:
         self.test_pipeline_3d = ComposeMMEngine(test_pipeline_3d)
         self.box_type_3d, self.box_mode_3d = get_box_type(cfg.test_dataloader.dataset.box_type_3d)
         
-    def _init_detector2d(self, cfg_file, checkpoint):
-        self.detector2d = init_detector(cfg_file, checkpoint, device=self.device)
+    def _init_detector2d(self):
+        self.model_type = self.detector2d.get('model_type', 'mmdet')
+        cfg_file = self.detector2d.get('cfg_path', None)
+        checkpoint = self.detector2d.get('checkpoint_path', None)
 
-        cfg = self.detector2d.cfg.copy()
-        test_pipeline_2d = get_test_pipeline_cfg(cfg)
-        self.test_pipeline_2d = ComposeMMCV(test_pipeline_2d)
+        if self.model_type == 'mmdet':
+            self.detector2d = init_detector(cfg_file, checkpoint, device=self.device)
+
+            cfg = self.detector2d.cfg.copy()
+            test_pipeline_2d = get_test_pipeline_cfg(cfg)
+            self.test_pipeline_2d = ComposeMMCV(test_pipeline_2d)
+        elif self.model_type == 'ultralytics':
+            self.detector2d = YOLO(checkpoint, task='detect')
+        else:
+            raise ValueError(f"Unsupported 2D model type: {self.model_type}. Supported types are 'mmdet' and 'ultralytics'.")
         
-    def _init_frustum_detector(self, cfg_file, checkpoint):
+    def _init_frustum_detector(self):
+        cfg_file = self.frustum_detector.get('cfg_path', None)
+        checkpoint = self.frustum_detector.get('checkpoint_path', None)
+
         self.frustum_detector = init_model(cfg_file, checkpoint, device=self.device)
 
         cfg = self.frustum_detector.cfg.copy()
@@ -180,14 +194,14 @@ class LateFusionStereoViewInferencer:
         if cam_to_img_right is None:
             cam_to_img_right = self.cam_to_img_right
             
-        bboxes_2d_left, labels_2d_left, scores_2d_left, data_samples_2d_left = self.rgb_branch_inference(img_file_left)
-        bboxes_2d_right, labels_2d_right, scores_2d_right, data_samples_2d_right = self.rgb_branch_inference(img_file_right)
+        bboxes_2d_left, labels_2d_left, scores_2d_left, img_shape_left = self.rgb_branch_inference(img_file_left)
+        bboxes_2d_right, labels_2d_right, scores_2d_right, img_shape_right = self.rgb_branch_inference(img_file_right)
         bboxes_3d, corners_3d, labels_3d, scores_3d, point_cloud = self.lidar_branch_inference(lidar_file)
         
         bbox_matching_dict = self.bbox_matching(bboxes_3d, scores_3d, labels_3d, corners_3d,
                                                 bboxes_2d_left, scores_2d_left, labels_2d_left, 
                                                 bboxes_2d_right, scores_2d_right, labels_2d_right,
-                                                data_samples_2d_left[0].img_shape, data_samples_2d_right[0].img_shape,
+                                                img_shape_left, img_shape_right,
                                                 lidar_to_cam, cam_to_img_left, cam_to_img_right)
         matching = bbox_matching_dict['matching']
         oov_detections = bbox_matching_dict['oov_bboxes']
@@ -201,7 +215,7 @@ class LateFusionStereoViewInferencer:
             recovery_output = self.detection_recovery(
                 point_cloud, bbox_matching_dict['unmatched_rgb_left'], bbox_matching_dict['unmatched_rgb_right'], 
                 lidar_to_cam=lidar_to_cam, cam_to_img_left=cam_to_img_left, cam_to_img_right=cam_to_img_right,
-                img_shape_left=data_samples_2d_left[0].img_shape, img_shape_right=data_samples_2d_right[0].img_shape,
+                img_shape_left=img_shape_left, img_shape_right=img_shape_right,
             )
             matching = self.merge_matchings(matching, recovery_output)
 
@@ -260,9 +274,12 @@ class LateFusionStereoViewInferencer:
         if isinstance(save_path, str):
             save_path = Path(save_path)
             
-        bboxes_2d_left, labels_2d_left, scores_2d_left, data_samples_2d_left = self.rgb_branch_inference(img_file_left)
-        bboxes_2d_right, labels_2d_right, scores_2d_right, data_samples_2d_right = self.rgb_branch_inference(img_file_right)
+        bboxes_2d_left, labels_2d_left, scores_2d_left, img_shape_left = self.rgb_branch_inference(img_file_left)
+        bboxes_2d_right, labels_2d_right, scores_2d_right, img_shape_right = self.rgb_branch_inference(img_file_right)
         bboxes_3d, corners_3d, labels_3d, scores_3d, point_cloud = self.lidar_branch_inference(lidar_file)
+
+        print('Left image shape:', img_shape_left)
+        print('Right image shape:', img_shape_right)
         
         image_left = np.array(Image.open(img_file_left)) 
         save_path_faster_rcnn = save_path / 'rgb_detections_left.png'
@@ -285,7 +302,7 @@ class LateFusionStereoViewInferencer:
         bbox_matching_dict = self.bbox_matching(bboxes_3d, scores_3d, labels_3d, corners_3d,
                                                 bboxes_2d_left, scores_2d_left, labels_2d_left, 
                                                 bboxes_2d_right, scores_2d_right, labels_2d_right,
-                                                data_samples_2d_left[0].img_shape, data_samples_2d_right[0].img_shape,
+                                                img_shape_left, img_shape_right,
                                                 lidar_to_cam, cam_to_img_left, cam_to_img_right)
         matching = bbox_matching_dict['matching']
         oov_detections = bbox_matching_dict['oov_bboxes']
@@ -299,7 +316,7 @@ class LateFusionStereoViewInferencer:
             recovery_output = self.detection_recovery(
                 point_cloud, bbox_matching_dict['unmatched_rgb_left'], bbox_matching_dict['unmatched_rgb_right'], 
                 lidar_to_cam=lidar_to_cam, cam_to_img_left=cam_to_img_left, cam_to_img_right=cam_to_img_right,
-                img_shape_left=data_samples_2d_left[0].img_shape, img_shape_right=data_samples_2d_right[0].img_shape,
+                img_shape_left=img_shape_left, img_shape_right=img_shape_right,
             )
             matching = self.merge_matchings(matching, recovery_output)
             
@@ -330,19 +347,38 @@ class LateFusionStereoViewInferencer:
         return final_detections   
         
     def rgb_branch_inference(self, img_file: str) -> Tuple[Tensor, Tensor, Tensor, Tensor, List]: 
-        inputs = dict(img_path=img_file, img_id=0)
-        inputs = self.test_pipeline_2d(inputs)
-        inputs['inputs'] = [inputs['inputs']]
-        inputs['data_samples'] = [inputs['data_samples']]
-        
-        with torch.no_grad():
-            results = self.detector2d.test_step(inputs)[0]
-        
-        labels = results.pred_instances.labels
-        scores = results.pred_instances.scores
+
+        if self.model_type == 'ultralytics':
+            results = self.detector2d.predict(
+                source=[img_file], 
+                save=False, 
+                verbose=False,
+                stream=False,
+                device=self.device,
+                conf=self.score_thr_2d.min().item())
+            results = results[0]
+            bboxes = results.boxes.xyxy
+            labels = results.boxes.cls.long()
+            scores = results.boxes.conf
+            img_shape = results.orig_shape
+
+        else:
+            inputs = dict(img_path=img_file, img_id=0)
+            inputs = self.test_pipeline_2d(inputs)
+            inputs['inputs'] = [inputs['inputs']]
+            inputs['data_samples'] = [inputs['data_samples']]
+            
+            with torch.no_grad():
+                results = self.detector2d.test_step(inputs)[0]
+            
+            labels = results.pred_instances.labels
+            scores = results.pred_instances.scores
+            bboxes = results.pred_instances.bboxes
+            img_shape = inputs['data_samples'][0].ori_shape
+
         valid_boxes = torch.isin(labels, self.valid_2d_classes)
         scores = scores[valid_boxes]
-        bboxes = results.pred_instances.bboxes[valid_boxes]
+        bboxes = bboxes[valid_boxes]
         labels = labels[valid_boxes]
         labels = self.img_label_mapping[labels].long()
 
@@ -351,7 +387,7 @@ class LateFusionStereoViewInferencer:
         labels = labels[filter_scores]
         scores = scores[filter_scores]
         
-        return bboxes, labels, scores, inputs['data_samples']
+        return bboxes, labels, scores, img_shape
     
     def lidar_branch_inference(self, pc_file: str) -> Tuple[Tensor, Tensor, Tensor]:
         inputs = dict(

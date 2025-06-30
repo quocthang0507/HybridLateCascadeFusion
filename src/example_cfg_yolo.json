@@ -1,5 +1,5 @@
 {
-    "score_thr_2d": [0.4, 0.4, 0.5],
+    "score_thr_2d": [0.1, 0.1, 0.1],
     "score_thr_3d": [0.2, 0.3, 0.3],
     "bbox_matching_iou_thr": 0.5,
     "bbox_matching_mode": "iou",
@@ -20,8 +20,8 @@
     "num_classes": 3,
     "classes": ["Pedestrian", "Cyclist", "Car"],
 
-    "valid_2d_classes": [0, 1, 2],
-    "img_label_mapping": [2, 0, 1],
+    "valid_2d_classes": [0, 1, 5],
+    "img_label_mapping": [0, 2, -1, -1, -1, 1],
 
     "final_nms_cfg": {
         "thresh": 0.3,
@@ -40,9 +40,8 @@
     },
 
     "detector2d": {
-        "model_type": "mmdet",
-        "cfg_path": "/home/carlos00/HybridLateCascadeFusion/src/model_configs/faster_rcnn.py",
-        "checkpoint_path": "/mnt/experiments/carlos00/models/kitti/faster_rcnn_3class/best_coco_bbox_mAP_epoch_200.pth"
+        "model_type": "ultralytics",
+        "checkpoint_path": "/home/carlos00/3d_object_detection/src/mmdetection3d/tools/dataset_converters/yolo11s_best_imgsz1024_bdd_only.pt"
     },
 
     "detector3d": {
