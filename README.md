@@ -124,7 +124,7 @@ python $HOME/HybridLateCascadeFusion/src/eval.py \
 
 ### Remarks
 
-Feel free to experiment with any 2D Camera-based Object Detector, 3D LiDAR-based Object Detector and configurations of the hyperparameters. The code support any 3D model of [mmdet3d](https://github.com/open-mmlab/mmdetection3d) and any 2D model of [mmdet](https://github.com/open-mmlab/mmdetection).
+Feel free to experiment with any 2D Camera-based Object Detector, 3D LiDAR-based Object Detector and configurations of the hyperparameters. The code support any 3D model of [mmdet3d](https://github.com/open-mmlab/mmdetection3d) and any 2D model of [mmdet](https://github.com/open-mmlab/mmdetection) or [ultralytics](https://github.com/ultralytics/ultralytics).
 
 #### Training a Frustum Localizer
 
